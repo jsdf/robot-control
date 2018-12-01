@@ -22,6 +22,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body && document.body.appendChild(renderer.domElement);
 const debugTextEl = document.createElement('pre');
 debugTextEl.id = 'debug';
+debugTextEl.style.pointerEvents = 'none';
 document.body && document.body.appendChild(debugTextEl);
 
 const transformControls = new TransformControls(camera, renderer.domElement);

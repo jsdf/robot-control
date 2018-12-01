@@ -102,6 +102,7 @@ export default class Robot {
         0 // maxJointAngle in radians
       )
     );
+    last(this.ikNodes).Freeze();
     this._insertIKNode(
       makeNode(
         VectorR3_Zero(), // startPos
@@ -111,14 +112,12 @@ export default class Robot {
         4 * Math.PI // maxJointAngle in radians
       )
     );
-    last(this.ikNodes).Freeze();
 
     this.addJoint(0, 0, 0);
-    last(this.ikNodes).Freeze();
     this.addJoint(0, 2, 0);
     this.addJoint(0, 4, 0);
-    this.addEndEffector(0, 0, 0); // wtf is this coordinate system?
-    this.targetVectors.push(new VectorR3(0, 4, 0));
+    this.addEndEffector(0, 4, 0); // wtf is this coordinate system?
+    this.targetVectors.push(new VectorR3(0, 6, 0));
 
     this.ikJacobian = new Jacobian(this.ikTree);
 
@@ -132,6 +131,10 @@ export default class Robot {
   }
 
   update() {
+    // can't go below ground
+    if (this.targetProxy.position.y < 0) {
+      this.targetProxy.position.y = 0;
+    }
     // copy current position from target proxy object
     this.targetVectors[0].Set(
       this.targetProxy.position.x,
@@ -200,8 +203,8 @@ export default class Robot {
       new VectorR3(x, y, z), // startPos
       VectorR3_UnitZ(), // rotationAxis
       JOINT, // purpose (joint or effector)
-      degToRad(-60), // minJointAngle in radians
-      degToRad(60) // maxJointAngle in radians
+      degToRad(-90), // minJointAngle in radians
+      degToRad(90) // maxJointAngle in radians
     );
 
     this._insertIKNode(ikNode);
@@ -243,6 +246,15 @@ export default class Robot {
   }
 
   _createDebugPoints() {
+    // ground
+    const groundGeometry = new THREE.PlaneGeometry(10, 10);
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      color: (0xffff00: number | string),
+    });
+    const plane = new THREE.Mesh(groundGeometry, groundMaterial);
+    plane.rotation.x = degToRad(-90);
+    this.scene.add(plane);
+
     this.ikNodes.forEach(node => {
       const point = makeBox(0.1, Math.random() * 0xffffff);
       this.debugPoints.push(point);
