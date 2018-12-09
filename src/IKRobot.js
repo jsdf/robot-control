@@ -27,12 +27,23 @@ function makeBox(
   return cube;
 }
 
+function toFixed(num, width) {
+  return `${num < 0 ? '' : ' '}${num.toFixed(width)}`;
+}
+
 function debugPrintVector3(vec: VectorR3 | THREE.Vector3) {
-  return `{x:${vec.x.toFixed(3)},y:${vec.y.toFixed(3)},z:${vec.z.toFixed(3)}}`;
+  return `{x:${toFixed(vec.x, 3)},y:${toFixed(vec.y, 3)},z:${toFixed(
+    vec.z,
+    3
+  )}}`;
+}
+
+function radToDeg(angleRadians: number): number {
+  return angleRadians * (180.0 / Math.PI);
 }
 
 function degToRad(angleDegrees: number): number {
-  return angleDegrees * Math.PI / 180.0;
+  return angleDegrees * (Math.PI / 180.0);
 }
 
 function makeArc(startAngle: number, size: number) {
@@ -82,27 +93,20 @@ export default class Robot {
   debugPoints: Array<THREE.Object3D> = [];
   lineGeometry: THREE.Geometry;
   debugLog: string => void;
+  debugTextAtPosition: (string, THREE.Object3D) => void;
 
   constructor(
     scene: THREE.Scene,
     transformControls: Object,
-    debugLog: string => void
+    debugLog: string => void,
+    debugTextAtPosition: (string, THREE.Object3D) => void
   ) {
     this.scene = scene;
     this.transformControls = transformControls;
     this.debugLog = debugLog;
+    this.debugTextAtPosition = debugTextAtPosition;
 
     // base
-    this._insertIKNode(
-      makeNode(
-        VectorR3_Zero(), // startPos
-        VectorR3_Zero(), // rotationAxis
-        JOINT, // purpose (joint or effector)
-        0, // minJointAngle in radians
-        0 // maxJointAngle in radians
-      )
-    );
-    last(this.ikNodes).Freeze();
     this._insertIKNode(
       makeNode(
         VectorR3_Zero(), // startPos
@@ -113,11 +117,11 @@ export default class Robot {
       )
     );
 
-    this.addJoint(0, 0, 0);
-    this.addJoint(0, 2, 0);
+    this.addJoint(0, 1, 0);
+    this.addJoint(0, 3, 0);
     this.addJoint(0, 4, 0);
-    this.addEndEffector(0, 4, 0); // wtf is this coordinate system?
-    this.targetVectors.push(new VectorR3(0, 6, 0));
+    this.addEndEffector(0, 3, 0);
+    this.targetVectors.push(new VectorR3(0, 5, 0));
 
     this.ikJacobian = new Jacobian(this.ikTree);
 
@@ -163,9 +167,11 @@ export default class Robot {
         this.ikNodes
           .map(
             node =>
-              `${node.s.toString()} ${node.attach.toString()} θ=${node.theta} ${
-                node.purpose
-              }`
+              `s=${debugPrintVector3(node.s)} a=${debugPrintVector3(
+                node.attach
+              )} θ=${radToDeg(node.theta)
+                .toFixed(1)
+                .padStart(6, ' ')}deg ${node.purpose}`
           )
           .join('\n') +
         '\n'
@@ -175,6 +181,15 @@ export default class Robot {
       'debugPoints:\n' +
         this.debugPoints.map(p => debugPrintVector3(p.position)).join('\n') +
         '\n'
+    );
+
+    this.debugPoints.forEach((point, i) => {
+      this.debugTextAtPosition(`${i}`, point);
+    });
+
+    this.debugTextAtPosition(
+      `${debugPrintVector3(this.targetProxy.position)}`,
+      this.targetProxy
     );
   }
 
@@ -203,8 +218,8 @@ export default class Robot {
       new VectorR3(x, y, z), // startPos
       VectorR3_UnitZ(), // rotationAxis
       JOINT, // purpose (joint or effector)
-      degToRad(-90), // minJointAngle in radians
-      degToRad(90) // maxJointAngle in radians
+      degToRad(-180), // minJointAngle in radians
+      degToRad(180) // maxJointAngle in radians
     );
 
     this._insertIKNode(ikNode);
@@ -247,9 +262,10 @@ export default class Robot {
 
   _createDebugPoints() {
     // ground
-    const groundGeometry = new THREE.PlaneGeometry(10, 10);
+    const groundGeometry = new THREE.PlaneGeometry(10, 10, 10, 10);
     const groundMaterial = new THREE.MeshBasicMaterial({
-      color: (0xffff00: number | string),
+      color: (0xaabbcc: number | string),
+      wireframe: true,
     });
     const plane = new THREE.Mesh(groundGeometry, groundMaterial);
     plane.rotation.x = degToRad(-90);

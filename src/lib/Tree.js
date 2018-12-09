@@ -78,7 +78,6 @@ export default class Tree {
 
   ComputeTree(node: ?Node) {
     if (node != null) {
-      debugger;
       node.ComputeS();
       node.ComputeW();
       this.ComputeTree(node.left);
@@ -90,7 +89,7 @@ export default class Tree {
     assert(this.nNode === 0);
     this.nNode++;
     this.root = root;
-    root.r = root.attach;
+    root.r = root.attach.clone();
     assert(!(root.left || root.right));
     this.SetSeqNum(root);
   }

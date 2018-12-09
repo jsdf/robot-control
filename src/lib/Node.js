@@ -121,7 +121,7 @@ export default class Node {
     this.seqNumJoint = -1;
     this.seqNumEffector = -1;
     this.attach = new VectorR3(0.0, 0.0, 0.0).copy(attach); // Global attachment point when joints are at zero angle
-    this.r = new VectorR3(0.0, 0.0, 0.0); // r will be updated when this node is inserted into tree
+    this.r = new VectorR3(0.0, 0.0, 0.0); // relative position vector. r will be updated when this node is inserted into tree
     this.v = new VectorR3(0.0, 0.0, 0.0).copy(v); // Rotation axis when joints at zero angles
     this.s = new VectorR3(0, 0, 0);
     this.w = new VectorR3(0, 0, 0);
