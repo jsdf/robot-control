@@ -50,7 +50,7 @@
     "whatwg-fetch": "2.0.3"
   },
   "scripts": {
-   "deploy": "yarn build && gh-pages -d build",
+    "deploy": "yarn build && gh-pages -d build",
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
     "test": "node scripts/test.js --env=jsdom"
@@ -97,5 +97,9 @@
   "eslintConfig": {
     "extends": "react-app"
   },
-  "homepage": "https://jsdf.github.io/robot-control"
+  "homepage": "https://jsdf.github.io/robot-control",
+  "devDependencies": {
+    "flow-bin": "^0.98.1",
+    "prettier": "^1.17.1"
+  }
 }

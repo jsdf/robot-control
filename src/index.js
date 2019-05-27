@@ -3,7 +3,6 @@ import IKRobot from './IKRobot';
 import AnnealingRobot from './AnnealingRobot';
 const THREE = require('three');
 const OrbitControls = require('three-orbit-controls')(THREE);
-const TransformControls = require('three-transform-controls')(THREE);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -44,10 +43,8 @@ Object.assign(debugAtPosEl.style, {
 });
 document.body && document.body.appendChild(debugAtPosEl);
 
-const transformControls = new TransformControls(camera, renderer.domElement);
 const orbitControls = new OrbitControls(camera);
 orbitControls.update();
-scene.add(transformControls);
 
 const Robot = window.location.search.slice(1).includes('ik')
   ? IKRobot
@@ -98,7 +95,8 @@ function createOrUpdatePositionedDebugTextNode(item, i) {
 const debug = {log: 'hi', positionedDebugText: []};
 const robot = new Robot(
   scene,
-  transformControls,
+  camera,
+  renderer,
   (msg: string) => {
     debug.log += msg;
   },
@@ -131,4 +129,5 @@ window.demo = {
   renderer,
   camera,
   scene,
+  robot,
 };

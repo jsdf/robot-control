@@ -15,6 +15,7 @@ import Jacobian from './lib/Jacobian';
 import Tree from './lib/Tree';
 
 const THREE = require('three');
+const TransformControls = require('three-transform-controls')(THREE);
 
 function makeBox(
   size: number,
@@ -82,7 +83,8 @@ function last<T>(arr: Array<T>): T {
 
 export default class Robot {
   scene: THREE.Scene;
-  transformControls: Object;
+  camera: THREE.Camera;
+  renderer: THREE.Renderer;
   ikTree: Tree = new Tree();
   ikNodes: Array<Node> = [];
   ikJacobian: Jacobian; // the ik solver
@@ -97,12 +99,14 @@ export default class Robot {
 
   constructor(
     scene: THREE.Scene,
-    transformControls: Object,
+    camera: THREE.Camera,
+    renderer: THREE.Renderer,
     debugLog: string => void,
     debugTextAtPosition: (string, THREE.Object3D) => void
   ) {
     this.scene = scene;
-    this.transformControls = transformControls;
+    this.camera = camera;
+    this.renderer = renderer;
     this.debugLog = debugLog;
     this.debugTextAtPosition = debugTextAtPosition;
 
@@ -179,7 +183,13 @@ export default class Robot {
 
     this.debugLog(
       'debugPoints:\n' +
-        this.debugPoints.map(p => debugPrintVector3(p.position)).join('\n') +
+        this.debugPoints
+          .map(
+            (p, i) =>
+              debugPrintVector3(p.position) +
+              ` valid=${this._validatePoint(p, i) ? 'y' : 'n'}`
+          )
+          .join('\n') +
         '\n'
     );
 
@@ -191,6 +201,13 @@ export default class Robot {
       `${debugPrintVector3(this.targetProxy.position)}`,
       this.targetProxy
     );
+  }
+
+  _validatePoint(p: THREE.Object3D, i: number) {
+    if (i > 0) {
+      return p.position.y >= 0;
+    }
+    return true;
   }
 
   _stepIKState() {
@@ -253,10 +270,15 @@ export default class Robot {
   }
 
   _makeTargetProxy(pos: VectorR3): THREE.Object3D {
+    const transformControls = new TransformControls(
+      this.camera,
+      this.renderer.domElement
+    );
+
     const cube = makeBox(0.5, 0x00ff00, true);
     cube.position.set(pos.x, pos.y, pos.z);
     this.scene.add(cube);
-    this.transformControls.attach(cube);
+    transformControls.attach(cube);
     return cube;
   }
 

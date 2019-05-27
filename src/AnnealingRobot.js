@@ -14,6 +14,7 @@ import {
 import Jacobian from './lib/Jacobian';
 
 const THREE = require('three');
+const TransformControls = require('three-transform-controls')(THREE);
 
 const SLEEP_TIME_BETWEEN_SOLVING = 0;
 const SOLVER_ITERATIONS = 10;
@@ -28,12 +29,12 @@ class Node extends THREE.Object3D {
   parentNode: ?Node;
   childNode: ?Node;
   constructor(
-    startPos,
-    startJointAngle,
-    rotationAxis,
-    purpose,
-    minJointAngle,
-    maxJointAngle
+    startPos: VectorR3,
+    startJointAngle: number,
+    rotationAxis: VectorR3,
+    purpose: Purpose,
+    minJointAngle: number = -Math.PI, // radians
+    maxJointAngle: number = Math.PI // radians
   ) {
     super();
     this.position.set(startPos.x, startPos.y, startPos.z);
@@ -145,7 +146,8 @@ type SolutionAndCost = {
 
 export default class Robot {
   scene: THREE.Scene;
-  transformControls: Object;
+  camera: THREE.Camera;
+  renderer: THREE.Renderer;
   ikTree: Node;
   ikNodes: Array<Node> = [];
   ikJacobian: Jacobian; // the ik solver
@@ -162,12 +164,14 @@ export default class Robot {
 
   constructor(
     scene: THREE.Scene,
-    transformControls: Object,
+    camera: THREE.Camera,
+    renderer: THREE.Renderer,
     debugLog: string => void,
     debugTextAtPosition: (string, THREE.Object3D) => void
   ) {
     this.scene = scene;
-    this.transformControls = transformControls;
+    this.camera = camera;
+    this.renderer = renderer;
     this.debugLog = debugLog;
 
     this._insertIKNode(
@@ -393,11 +397,11 @@ export default class Robot {
             0
           ) /
             solution.length +
-          positions.reduce(
+          (positions.reduce(
             (acc, v, i) => acc + v.distanceTo(lastSolution.positions[i]),
             0
           ) /
-            positions.length *
+            positions.length) *
             lastPosImportance
         : 0)
     );
@@ -413,7 +417,7 @@ export default class Robot {
 
   _generateNeighbourSolution(prev: Array<number>) {
     const i = Math.floor(this.ikNodes.length * Math.random());
-    const solution = prev.slice(0);
+    const solution: Array<number> = prev.slice(0);
 
     solution[i] =
       this.ikNodes[i].minJointAngle +
@@ -525,10 +529,15 @@ export default class Robot {
   }
 
   _makeTargetProxy(pos: VectorR3): THREE.Object3D {
+    const transformControls = new TransformControls(
+      this.camera,
+      this.renderer.domElement
+    );
+    this.scene.add(transformControls);
     const cube = makeBox(0.5, 0x00ff00, true);
     cube.position.set(pos.x, pos.y, pos.z);
     this.scene.add(cube);
-    this.transformControls.attach(cube);
+    transformControls.attach(cube);
     return cube;
   }
 
