@@ -34,6 +34,13 @@ function assert(pass: boolean) {
   }
 }
 
+function nullthrows<T>(val:? T):T {
+  if (val == null) {
+    throw new Error('expected value, got null or undefined');
+  }
+  return val;
+}
+
 export default class Tree {
   // public:
 
@@ -99,6 +106,16 @@ export default class Tree {
     parent.left = child;
     child.realparent = parent;
     child.r = child.attach.subtract(parent.attach);
+    assert(!(child.left || child.right));
+    this.SetSeqNum(child);
+  }
+
+  InsertRightSibling(parent: Node, child: Node) {
+    assert(parent != null);
+    this.nNode++;
+    parent.right = child;
+    child.realparent = parent.realparent;
+    child.r = child.attach.subtract(nullthrows(child.realparent).attach);
     assert(!(child.left || child.right));
     this.SetSeqNum(child);
   }

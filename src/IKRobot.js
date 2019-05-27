@@ -91,7 +91,7 @@ export default class Robot {
   targetVectors: Array<VectorR3> = [];
   // ik destination controlled by targets or end effectors?
   useTargets = true;
-  targetProxy: THREE.Object3D;
+  targetProxies: Array<THREE.Object3D> = [];
   debugPoints: Array<THREE.Object3D> = [];
   lineGeometry: THREE.Geometry;
   debugLog: string => void;
@@ -110,21 +110,21 @@ export default class Robot {
     this.debugLog = debugLog;
     this.debugTextAtPosition = debugTextAtPosition;
 
-    // base
-    this._insertIKNode(
+    const baseRototatorJoint = this._insertIKNode(
       makeNode(
         VectorR3_Zero(), // startPos
         VectorR3_UnitY(), // rotationAxis
         JOINT, // purpose (joint or effector)
         4 * -Math.PI, // minJointAngle in radians
         4 * Math.PI // maxJointAngle in radians
-      )
+      ),
+      null // root
     );
 
-    this.addJoint(0, 1, 0);
-    this.addJoint(0, 3, 0);
-    this.addJoint(0, 4, 0);
-    this.addEndEffector(0, 3, 0);
+    const armBaseTiltJoint = this.addJoint(0, 1, 0, baseRototatorJoint);
+    const armMidJoint = this.addJoint(0, 3, 0, armBaseTiltJoint);
+    const gripperTiltJoint = this.addJoint(0, 4, 0, armMidJoint);
+    this.addEndEffector(0, 3, 0, gripperTiltJoint);
     this.targetVectors.push(new VectorR3(0, 5, 0));
 
     this.ikJacobian = new Jacobian(this.ikTree);
@@ -135,20 +135,25 @@ export default class Robot {
     this._updateDebugPoints();
 
     // create some graphics proxy for the tracking target
-    this.targetProxy = this._makeTargetProxy(this.targetVectors[0]);
+
+    for (var i = 0; i < this.targetVectors.length; i++) {
+      this.targetProxies[i] = this._makeTargetProxy(this.targetVectors[i]);
+    }
   }
 
   update() {
-    // can't go below ground
-    if (this.targetProxy.position.y < 0) {
-      this.targetProxy.position.y = 0;
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      // can't go below ground
+      if (this.targetProxies[i].position.y < 0) {
+        this.targetProxies[i].position.y = 0;
+      }
+      // copy current position from target proxy object
+      this.targetVectors[i].Set(
+        this.targetProxies[i].position.x,
+        this.targetProxies[i].position.y,
+        this.targetProxies[i].position.z
+      );
     }
-    // copy current position from target proxy object
-    this.targetVectors[0].Set(
-      this.targetProxy.position.x,
-      this.targetProxy.position.y,
-      this.targetProxy.position.z
-    );
     // update ik solution
     this._stepIKState();
     // move threejs geometries as a result of ik update
@@ -159,12 +164,14 @@ export default class Robot {
 
   _debugLogging() {
     this.debugLog('\n');
-    this.debugLog(
-      this.targetProxy &&
-        `targetProxy.position: ${debugPrintVector3(
-          this.targetProxy.position
-        )}\n`
-    );
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      this.debugLog(
+        this.targetProxies[i] &&
+          `targetProxies[${i}].position: ${debugPrintVector3(
+            this.targetProxies[i].position
+          )}\n`
+      );
+    }
 
     this.debugLog(
       'ikNodes:\n' +
@@ -197,10 +204,12 @@ export default class Robot {
       this.debugTextAtPosition(`${i}`, point);
     });
 
-    this.debugTextAtPosition(
-      `${debugPrintVector3(this.targetProxy.position)}`,
-      this.targetProxy
-    );
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      this.debugTextAtPosition(
+        `${debugPrintVector3(this.targetProxies[i].position)}`,
+        this.targetProxies[i]
+      );
+    }
   }
 
   _validatePoint(p: THREE.Object3D, i: number) {
@@ -230,7 +239,7 @@ export default class Robot {
     this.ikJacobian.UpdatedSClampValue(this.targetVectors);
   }
 
-  addJoint(x: number, y: number, z: number) {
+  addJoint(x: number, y: number, z: number, parent: Node) {
     const ikNode = makeNode(
       new VectorR3(x, y, z), // startPos
       VectorR3_UnitZ(), // rotationAxis
@@ -239,28 +248,40 @@ export default class Robot {
       degToRad(180) // maxJointAngle in radians
     );
 
-    this._insertIKNode(ikNode);
+    this._insertIKNode(ikNode, parent);
+    return ikNode;
   }
 
-  addEndEffector(x: number, y: number, z: number) {
+  addEndEffector(
+    x: number,
+    y: number,
+    z: number,
+    parent: Node,
+    rightChild: boolean = false
+  ) {
     const ikNode = makeNode(
       new VectorR3(x, y, z), // startPos
       VectorR3_UnitZ(), // rotationAxis
       EFFECTOR // purpose (joint or effector)
     );
-    this._insertIKNode(ikNode);
-  }
 
-  _insertIKNode(ikNode: Node) {
-    if (this.ikNodes.length === 0) {
-      this.ikTree.InsertRoot(ikNode);
+    if (rightChild) {
+      this.ikTree.InsertRightSibling(parent, ikNode);
     } else {
-      this.ikTree.InsertLeftChild(
-        this.ikNodes[this.ikNodes.length - 1],
-        ikNode
-      );
+      this.ikTree.InsertLeftChild(parent, ikNode);
     }
     this.ikNodes.push(ikNode);
+    return ikNode;
+  }
+
+  _insertIKNode(ikNode: Node, parent: ?Node) {
+    if (parent == null) {
+      this.ikTree.InsertRoot(ikNode);
+    } else {
+      this.ikTree.InsertLeftChild(parent, ikNode);
+    }
+    this.ikNodes.push(ikNode);
+    return ikNode;
   }
 
   _resetIKState() {
@@ -274,6 +295,7 @@ export default class Robot {
       this.camera,
       this.renderer.domElement
     );
+    this.scene.add(transformControls);
 
     const cube = makeBox(0.5, 0x00ff00, true);
     cube.position.set(pos.x, pos.y, pos.z);

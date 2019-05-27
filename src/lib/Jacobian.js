@@ -566,8 +566,7 @@ export default class Jacobian {
     // Calculate response vector this.dTheta that is the SDLS solution.
     //  Delta target values are the this.dS values
     let nRows = J.GetNumRows();
-    // TODO: Modify it to work with multiple end effectors.
-    let numEndEffectors = 1;
+    let numEndEffectors = this.m_tree.GetNumEffector();   // Equals the number of rows of J divided by three
     let nCols = J.GetNumColumns();
     this.dTheta.SetZero();
 
