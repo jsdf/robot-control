@@ -1,6 +1,7 @@
 // @flow
 import IKRobot from './IKRobot';
 import AnnealingRobot from './AnnealingRobot';
+import renderControls from './Controls';
 const THREE = require('three');
 const OrbitControls = require('three-orbit-controls')(THREE);
 
@@ -91,6 +92,10 @@ function createOrUpdatePositionedDebugTextNode(item, i) {
 
   node.textContent = item.text;
 }
+
+const reactRoot = document.createElement('div');
+document.body && document.body.appendChild(reactRoot);
+const controls = renderControls(reactRoot);
 
 const debug = {log: 'hi', positionedDebugText: []};
 const robot = new Robot(
