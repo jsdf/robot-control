@@ -23,6 +23,23 @@ type Vec3Interface = {
 const THREE = require('three');
 const TransformControls = require('three-transform-controls')(THREE);
 
+/*
+TODO:
+- validation
+  - collision detection for arm-arm collision
+- movement solution
+  - candidate integral steps
+    - could use IK steps to find intermediate positions
+  - ghost render for integral steps
+  - find alternate options to invalid integral steps
+    - simulated annealing
+    - pathfinding algo + target pos?
+- motion control
+- hand grip pos and rotation
+- server communication
+- waypoint-based movement paths
+ */
+
 function setColor(obj: THREE.Mesh, color: number) {
   const {material} = obj;
   if (material instanceof THREE.MeshBasicMaterial) {
@@ -142,7 +159,7 @@ class ArmSolution {
     const armMidJoint = this.addJoint(0, 3, 0, armBaseTiltJoint);
     const gripperTiltJoint = this.addJoint(0, 4, 0, armMidJoint);
     this.addEndEffector(0, 3, 0, gripperTiltJoint);
-    this.targetVectors.push(new VectorR3(0, 5, 0));
+    this.targetVectors.push(new VectorR3(0, 6, 0));
 
     this.ikJacobian = new Jacobian(this.ikTree);
 
@@ -324,12 +341,19 @@ class ArmSolution {
   }
 }
 
+type ArmRendererState = 'planned' | 'committed';
 class ArmRenderer {
   armSolution: ArmSolution;
   debugPoints: Array<THREE.Mesh> = [];
   lineGeometry: THREE.Geometry;
   scene: THREE.Scene;
-  constructor(armSolution: ArmSolution, scene: THREE.Scene) {
+  state: ArmRendererState;
+  constructor(
+    armSolution: ArmSolution,
+    scene: THREE.Scene,
+    state: ArmRendererState
+  ) {
+    this.state = state;
     this.scene = scene;
     this.armSolution = armSolution;
 
@@ -346,7 +370,7 @@ class ArmRenderer {
       lineGeom.vertices.push(vert);
     });
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: (0x0000ff: number | string),
+      color: ((state === 'planned' ? 0x0000ff : 0xff9900): number | string),
     });
 
     const line = new THREE.Line(lineGeom, lineMaterial);
@@ -398,14 +422,24 @@ export default class Robot {
     this.debugTextAtPosition = debugTextAtPosition;
 
     this.plannedArmSolution = new ArmSolution();
+    // fix for stuck initial state
+    this.plannedArmSolution.targetVectors[0].x += Math.random() * 0.01;
+    this.plannedArmSolution.targetVectors[0].y += Math.random() * 0.01;
+    this.plannedArmSolution.targetVectors[0].z += Math.random() * 0.01;
+    this.plannedArmSolution.stepIKState();
     this.committedArmSolution = new ArmSolution(
       this.plannedArmSolution.serialize()
     );
 
-    this.plannedRenderer = new ArmRenderer(this.plannedArmSolution, this.scene);
+    this.plannedRenderer = new ArmRenderer(
+      this.plannedArmSolution,
+      this.scene,
+      'planned'
+    );
     this.committedRenderer = new ArmRenderer(
       this.committedArmSolution,
-      this.scene
+      this.scene,
+      'committed'
     );
 
     this._createStaticGraphics();
@@ -449,7 +483,7 @@ export default class Robot {
 
   _debugLogging() {
     this.debugLog('\n');
-    for (var i = 0; i < this.targetProxies.length; i++) {
+    for (let i = 0; i < this.targetProxies.length; i++) {
       this.debugLog(
         this.targetProxies[i] &&
           `targetProxies[${i}].position: ${debugPrintVector3(
@@ -471,15 +505,15 @@ export default class Robot {
 
       this.debugLog(
         type +
-          ' ikNodes:\n' +
+          ':\n' +
           armSolution.ikNodes
-            .map(node => {
+            .map((node, i) => {
               const attach = false ? `a=${debugPrintVector3(node.attach)}` : '';
-              return `s=${debugPrintVector3(node.s)}${attach} θ=${radToDeg(
-                node.theta
-              )
+              return `${node.purpose.padEnd(8)} ${i} s=${debugPrintVector3(
+                node.s
+              )}${attach} θ=${radToDeg(node.theta)
                 .toFixed(1)
-                .padStart(6, ' ')}deg ${node.purpose} valid=${
+                .padStart(6, ' ')}deg ok=${
                 armSolution.validatePoint(node.s, i) ? 'y' : 'n'
               }`;
             })
