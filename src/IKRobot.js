@@ -30,6 +30,15 @@ function setColor(obj: THREE.Mesh, color: number) {
   }
 }
 
+function distanceTo(source: Vec3Interface, dest: Vec3Interface) {
+  const dx = source.x - dest.x;
+  const dy = source.y - dest.y;
+  const dz = source.z - dest.z;
+
+  const distanceToSquared = dx * dx + dy * dy + dz * dz;
+  return Math.sqrt(distanceToSquared);
+}
+
 function makeBox(
   size: number,
   color: number | string,
@@ -93,6 +102,21 @@ function makeNode(
 function last<T>(arr: Array<T>): T {
   return arr[arr.length - 1];
 }
+
+function makeTHREEVector3(init: Vec3Interface) {
+  return new THREE.Vector3(init.x, init.y, init.z);
+}
+
+const annealingE = 2.71828;
+function annealingAcceptanceProbability(oldCost, newCost, T) {
+  return annealingE * ((oldCost - newCost) / T);
+}
+
+type SolutionAndCost = {
+  solution: Array<number>,
+  cost: number,
+  positions: Array<Vec3Interface>,
+};
 
 class ArmSolution {
   ikTree: Tree = new Tree();
@@ -222,6 +246,82 @@ class ArmSolution {
 
     this.ikTree.Compute();
   }
+
+  // simulated annealing stuff
+
+  _annealSolution(sol: SolutionAndCost): SolutionAndCost {
+    let oldSol = sol;
+    let T = 1.0;
+    const T_min = 0.00001;
+    const alpha = 0.9;
+    while (T > T_min) {
+      for (let i = 1; i < 50; i++) {
+        let newSol = this._generateNeighborSolution(oldSol);
+        let ap = annealingAcceptanceProbability(oldSol.cost, newSol.cost, T);
+        if (ap > Math.random()) {
+          oldSol = newSol;
+        }
+      }
+      T = T * alpha;
+    }
+    return oldSol;
+  }
+
+  _generateNeighborSolution(sol: SolutionAndCost): SolutionAndCost {
+    let solution;
+    do {
+      solution = this._generateNeighbourSolution(sol.solution);
+      this.applySolution(solution);
+    } while (!this.solutionIsValid());
+    const positions = this._getWorldPositions();
+    const cost = this._getCostFor(positions, solution);
+    return {
+      solution,
+      cost,
+      positions,
+    };
+  }
+
+  lastSolution: ?SolutionAndCost = null;
+  _getCostFor(positions: Array<Vec3Interface>, solution: Array<number>) {
+    const lastSolution = this.lastSolution;
+    const lastPosImportance = 0.5;
+    return (
+      distanceTo(last(this.ikNodes).s, this.targetVectors[0]) +
+      (lastSolution
+        ? solution.reduce(
+            (acc, v, i) => acc + (solution[i] - lastSolution.solution[i]),
+            0
+          ) /
+            solution.length +
+          (positions.reduce(
+            (acc, v, i) => acc + distanceTo(v, lastSolution.positions[i]),
+            0
+          ) /
+            positions.length) *
+            lastPosImportance
+        : 0)
+    );
+  }
+
+  _getWorldPositions(): Array<Vec3Interface> {
+    const positions = [];
+    for (var i = 0; i < this.ikNodes.length; i++) {
+      positions.push(this.ikNodes[i].s);
+    }
+    return positions;
+  }
+
+  _generateNeighbourSolution(prev: Array<number>) {
+    const i = Math.floor(this.ikNodes.length * Math.random());
+    const solution: Array<number> = prev.slice(0);
+
+    solution[i] =
+      this.ikNodes[i].minTheta +
+      Math.random() * (this.ikNodes[i].maxTheta - this.ikNodes[i].minTheta);
+
+    return solution;
+  }
 }
 
 class ArmRenderer {
@@ -341,10 +441,10 @@ export default class Robot {
     this._debugLogging();
   }
 
-  commitPlan() {
-    this.committedArmSolution.applySolution(
-      this.plannedArmSolution.serialize()
-    );
+  commitPlan(): Array<number> {
+    const plan = this.plannedArmSolution.serialize();
+    this.committedArmSolution.applySolution(plan);
+    return plan;
   }
 
   _debugLogging() {

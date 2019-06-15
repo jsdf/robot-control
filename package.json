@@ -53,6 +53,7 @@
     "deploy": "yarn build && gh-pages -d build",
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
+    "lib-sync": "cp ../bussik-js/src/lib/* ./src/lib/",
     "test": "node scripts/test.js --env=jsdom"
   },
   "jest": {
