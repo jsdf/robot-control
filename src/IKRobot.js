@@ -14,8 +14,21 @@ import {
 import Jacobian from './lib/Jacobian';
 import Tree from './lib/Tree';
 
+type Vec3Interface = {
+  x: number,
+  y: number,
+  z: number,
+};
+
 const THREE = require('three');
 const TransformControls = require('three-transform-controls')(THREE);
+
+function setColor(obj: THREE.Mesh, color: number) {
+  const {material} = obj;
+  if (material instanceof THREE.MeshBasicMaterial) {
+    material.color.setHex(color);
+  }
+}
 
 function makeBox(
   size: number,
@@ -92,7 +105,7 @@ export default class Robot {
   // ik destination controlled by targets or end effectors?
   useTargets = true;
   targetProxies: Array<THREE.Object3D> = [];
-  debugPoints: Array<THREE.Object3D> = [];
+  debugPoints: Array<THREE.Mesh> = [];
   lineGeometry: THREE.Geometry;
   debugLog: string => void;
   debugTextAtPosition: (string, THREE.Object3D) => void;
@@ -172,6 +185,9 @@ export default class Robot {
           )}\n`
       );
     }
+    this.debugLog(
+      `solution=${this._solutionIsValid() ? 'valid' : 'invalid'}\n`
+    );
 
     this.debugLog(
       'ikNodes:\n' +
@@ -194,7 +210,7 @@ export default class Robot {
           .map(
             (p, i) =>
               debugPrintVector3(p.position) +
-              ` valid=${this._validatePoint(p, i) ? 'y' : 'n'}`
+              ` valid=${this._validatePoint(p.position, i) ? 'y' : 'n'}`
           )
           .join('\n') +
         '\n'
@@ -212,9 +228,9 @@ export default class Robot {
     }
   }
 
-  _validatePoint(p: THREE.Object3D, i: number) {
+  _validatePoint(p: Vec3Interface, i: number) {
     if (i > 0) {
-      return p.position.y >= 0;
+      return p.y >= 0;
     }
     return true;
   }
@@ -340,8 +356,19 @@ export default class Robot {
     for (var i = 0; i < this.debugPoints.length; i++) {
       const pos = this.ikNodes[i].s;
       this.debugPoints[i].position.set(pos.x, pos.y, pos.z);
+
+      setColor(
+        this.debugPoints[i],
+        this._validatePoint(this.debugPoints[i].position, i)
+          ? 0x00ff00
+          : 0xff0000
+      );
       this.lineGeometry.vertices[i].set(pos.x, pos.y, pos.z);
     }
     this.lineGeometry.verticesNeedUpdate = true;
+  }
+
+  _solutionIsValid() {
+    return this.ikNodes.every((node, i) => this._validatePoint(node.s, i));
   }
 }
