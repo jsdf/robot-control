@@ -125,9 +125,8 @@ class ArmSolution {
     this._resetIKState();
     if (initialSolution) {
       this.applySolution(initialSolution);
-    } else {
-      this.stepIKState();
     }
+    this.stepIKState();
   }
 
   stepIKState() {
@@ -220,7 +219,8 @@ class ArmSolution {
     this.ikNodes.forEach((node, i) => {
       node.theta = solution[i];
     });
-    this.stepIKState();
+
+    this.ikTree.Compute();
   }
 }
 
@@ -341,6 +341,12 @@ export default class Robot {
     this._debugLogging();
   }
 
+  commitPlan() {
+    this.committedArmSolution.applySolution(
+      this.plannedArmSolution.serialize()
+    );
+  }
+
   _debugLogging() {
     this.debugLog('\n');
     for (var i = 0; i < this.targetProxies.length; i++) {
@@ -357,22 +363,30 @@ export default class Robot {
       }\n`
     );
 
-    this.debugLog(
-      'ikNodes:\n' +
-        this.plannedArmSolution.ikNodes
-          .map(
-            node =>
-              `s=${debugPrintVector3(node.s)} a=${debugPrintVector3(
-                node.attach
-              )} θ=${radToDeg(node.theta)
+    ['planned', 'committed'].forEach(type => {
+      const armSolution =
+        type === 'planned'
+          ? this.plannedArmSolution
+          : this.committedArmSolution;
+
+      this.debugLog(
+        type +
+          ' ikNodes:\n' +
+          armSolution.ikNodes
+            .map(node => {
+              const attach = false ? `a=${debugPrintVector3(node.attach)}` : '';
+              return `s=${debugPrintVector3(node.s)}${attach} θ=${radToDeg(
+                node.theta
+              )
                 .toFixed(1)
                 .padStart(6, ' ')}deg ${node.purpose} valid=${
-                this.plannedArmSolution.validatePoint(node.s, i) ? 'y' : 'n'
-              }`
-          )
-          .join('\n') +
-        '\n'
-    );
+                armSolution.validatePoint(node.s, i) ? 'y' : 'n'
+              }`;
+            })
+            .join('\n') +
+          '\n'
+      );
+    });
 
     this.plannedRenderer.debugPoints.forEach((point, i) => {
       this.debugTextAtPosition(`${i}`, point);
@@ -414,5 +428,6 @@ export default class Robot {
 
   _updateGraphics() {
     this.plannedRenderer.update();
+    this.committedRenderer.update();
   }
 }

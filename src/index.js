@@ -95,7 +95,6 @@ function createOrUpdatePositionedDebugTextNode(item, i) {
 
 const reactRoot = document.createElement('div');
 document.body && document.body.appendChild(reactRoot);
-const controls = renderControls(reactRoot);
 
 const debug = {log: 'hi', positionedDebugText: []};
 const robot = new Robot(
@@ -110,6 +109,10 @@ const robot = new Robot(
     debug.positionedDebugText.push({text, screenPos});
   }
 );
+
+if (robot instanceof IKRobot) {
+  renderControls(reactRoot, robot);
+}
 
 function animate(timestamp: number) {
   orbitControls.update();
