@@ -94,35 +94,15 @@ function last<T>(arr: Array<T>): T {
   return arr[arr.length - 1];
 }
 
-export default class Robot {
-  scene: THREE.Scene;
-  camera: THREE.Camera;
-  renderer: THREE.Renderer;
+class ArmSolution {
   ikTree: Tree = new Tree();
   ikNodes: Array<Node> = [];
   ikJacobian: Jacobian; // the ik solver
   targetVectors: Array<VectorR3> = [];
   // ik destination controlled by targets or end effectors?
   useTargets = true;
-  targetProxies: Array<THREE.Object3D> = [];
-  debugPoints: Array<THREE.Mesh> = [];
-  lineGeometry: THREE.Geometry;
-  debugLog: string => void;
-  debugTextAtPosition: (string, THREE.Object3D) => void;
 
-  constructor(
-    scene: THREE.Scene,
-    camera: THREE.Camera,
-    renderer: THREE.Renderer,
-    debugLog: string => void,
-    debugTextAtPosition: (string, THREE.Object3D) => void
-  ) {
-    this.scene = scene;
-    this.camera = camera;
-    this.renderer = renderer;
-    this.debugLog = debugLog;
-    this.debugTextAtPosition = debugTextAtPosition;
-
+  constructor(initialSolution?: Array<number>) {
     const baseRototatorJoint = this._insertIKNode(
       makeNode(
         VectorR3_Zero(), // startPos
@@ -143,99 +123,14 @@ export default class Robot {
     this.ikJacobian = new Jacobian(this.ikTree);
 
     this._resetIKState();
-    this._stepIKState();
-    this._createDebugPoints();
-    this._updateDebugPoints();
-
-    // create some graphics proxy for the tracking target
-
-    for (var i = 0; i < this.targetVectors.length; i++) {
-      this.targetProxies[i] = this._makeTargetProxy(this.targetVectors[i]);
+    if (initialSolution) {
+      this.applySolution(initialSolution);
+    } else {
+      this.stepIKState();
     }
   }
 
-  update() {
-    for (var i = 0; i < this.targetProxies.length; i++) {
-      // can't go below ground
-      if (this.targetProxies[i].position.y < 0) {
-        this.targetProxies[i].position.y = 0;
-      }
-      // copy current position from target proxy object
-      this.targetVectors[i].Set(
-        this.targetProxies[i].position.x,
-        this.targetProxies[i].position.y,
-        this.targetProxies[i].position.z
-      );
-    }
-    // update ik solution
-    this._stepIKState();
-    // move threejs geometries as a result of ik update
-    this._updateDebugPoints();
-
-    this._debugLogging();
-  }
-
-  _debugLogging() {
-    this.debugLog('\n');
-    for (var i = 0; i < this.targetProxies.length; i++) {
-      this.debugLog(
-        this.targetProxies[i] &&
-          `targetProxies[${i}].position: ${debugPrintVector3(
-            this.targetProxies[i].position
-          )}\n`
-      );
-    }
-    this.debugLog(
-      `solution=${this._solutionIsValid() ? 'valid' : 'invalid'}\n`
-    );
-
-    this.debugLog(
-      'ikNodes:\n' +
-        this.ikNodes
-          .map(
-            node =>
-              `s=${debugPrintVector3(node.s)} a=${debugPrintVector3(
-                node.attach
-              )} θ=${radToDeg(node.theta)
-                .toFixed(1)
-                .padStart(6, ' ')}deg ${node.purpose}`
-          )
-          .join('\n') +
-        '\n'
-    );
-
-    this.debugLog(
-      'debugPoints:\n' +
-        this.debugPoints
-          .map(
-            (p, i) =>
-              debugPrintVector3(p.position) +
-              ` valid=${this._validatePoint(p.position, i) ? 'y' : 'n'}`
-          )
-          .join('\n') +
-        '\n'
-    );
-
-    this.debugPoints.forEach((point, i) => {
-      this.debugTextAtPosition(`${i}`, point);
-    });
-
-    for (var i = 0; i < this.targetProxies.length; i++) {
-      this.debugTextAtPosition(
-        `${debugPrintVector3(this.targetProxies[i].position)}`,
-        this.targetProxies[i]
-      );
-    }
-  }
-
-  _validatePoint(p: Vec3Interface, i: number) {
-    if (i > 0) {
-      return p.y >= 0;
-    }
-    return true;
-  }
-
-  _stepIKState() {
+  stepIKState() {
     if (this.useTargets) {
       this.ikJacobian.SetJtargetActive();
     } else {
@@ -306,6 +201,191 @@ export default class Robot {
     this.ikJacobian.Reset();
   }
 
+  validatePoint(p: Vec3Interface, i: number) {
+    if (i > 0) {
+      return p.y >= 0;
+    }
+    return true;
+  }
+
+  solutionIsValid() {
+    return this.ikNodes.every((node, i) => this.validatePoint(node.s, i));
+  }
+
+  serialize(): Array<number> {
+    return this.ikNodes.map(node => node.theta);
+  }
+
+  applySolution(solution: Array<number>) {
+    this.ikNodes.forEach((node, i) => {
+      node.theta = solution[i];
+    });
+    this.stepIKState();
+  }
+}
+
+class ArmRenderer {
+  armSolution: ArmSolution;
+  debugPoints: Array<THREE.Mesh> = [];
+  lineGeometry: THREE.Geometry;
+  scene: THREE.Scene;
+  constructor(armSolution: ArmSolution, scene: THREE.Scene) {
+    this.scene = scene;
+    this.armSolution = armSolution;
+
+    this.armSolution.ikNodes.forEach(node => {
+      const point = makeBox(0.1, Math.random() * 0xffffff);
+      this.debugPoints.push(point);
+      this.scene.add(point);
+    });
+
+    // build line
+    const lineGeom = new THREE.Geometry();
+    this.armSolution.ikNodes.forEach(node => {
+      const vert = new THREE.Vector3(0, 0, 0);
+      lineGeom.vertices.push(vert);
+    });
+    const lineMaterial = new THREE.LineBasicMaterial({
+      color: (0x0000ff: number | string),
+    });
+
+    const line = new THREE.Line(lineGeom, lineMaterial);
+    this.scene.add(line);
+    this.lineGeometry = lineGeom;
+  }
+
+  update() {
+    for (var i = 0; i < this.debugPoints.length; i++) {
+      const pos = this.armSolution.ikNodes[i].s;
+      this.debugPoints[i].position.set(pos.x, pos.y, pos.z);
+
+      setColor(
+        this.debugPoints[i],
+        this.armSolution.validatePoint(this.debugPoints[i].position, i)
+          ? 0x00ff00
+          : 0xff0000
+      );
+      this.lineGeometry.vertices[i].set(pos.x, pos.y, pos.z);
+    }
+    this.lineGeometry.verticesNeedUpdate = true;
+  }
+}
+
+export default class Robot {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
+  renderer: THREE.Renderer;
+  targetProxies: Array<THREE.Object3D> = [];
+  debugLog: string => void;
+  debugTextAtPosition: (string, THREE.Object3D) => void;
+
+  plannedArmSolution: ArmSolution;
+  plannedRenderer: ArmRenderer;
+  committedArmSolution: ArmSolution;
+  committedRenderer: ArmRenderer;
+
+  constructor(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    renderer: THREE.Renderer,
+    debugLog: string => void,
+    debugTextAtPosition: (string, THREE.Object3D) => void
+  ) {
+    this.scene = scene;
+    this.camera = camera;
+    this.renderer = renderer;
+    this.debugLog = debugLog;
+    this.debugTextAtPosition = debugTextAtPosition;
+
+    this.plannedArmSolution = new ArmSolution();
+    this.committedArmSolution = new ArmSolution(
+      this.plannedArmSolution.serialize()
+    );
+
+    this.plannedRenderer = new ArmRenderer(this.plannedArmSolution, this.scene);
+    this.committedRenderer = new ArmRenderer(
+      this.committedArmSolution,
+      this.scene
+    );
+
+    this._createStaticGraphics();
+    this._updateGraphics();
+
+    // create some graphics proxy for the tracking target
+
+    for (var i = 0; i < this.plannedArmSolution.targetVectors.length; i++) {
+      this.targetProxies[i] = this._makeTargetProxy(
+        this.plannedArmSolution.targetVectors[i]
+      );
+    }
+  }
+
+  update() {
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      // can't go below ground
+      if (this.targetProxies[i].position.y < 0) {
+        this.targetProxies[i].position.y = 0;
+      }
+      // copy current position from target proxy object
+      this.plannedArmSolution.targetVectors[i].Set(
+        this.targetProxies[i].position.x,
+        this.targetProxies[i].position.y,
+        this.targetProxies[i].position.z
+      );
+    }
+    // update ik solution
+    this.plannedArmSolution.stepIKState();
+    // move threejs geometries as a result of ik update
+    this._updateGraphics();
+
+    this._debugLogging();
+  }
+
+  _debugLogging() {
+    this.debugLog('\n');
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      this.debugLog(
+        this.targetProxies[i] &&
+          `targetProxies[${i}].position: ${debugPrintVector3(
+            this.targetProxies[i].position
+          )}\n`
+      );
+    }
+    this.debugLog(
+      `solution=${
+        this.plannedArmSolution.solutionIsValid() ? 'valid' : 'invalid'
+      }\n`
+    );
+
+    this.debugLog(
+      'ikNodes:\n' +
+        this.plannedArmSolution.ikNodes
+          .map(
+            node =>
+              `s=${debugPrintVector3(node.s)} a=${debugPrintVector3(
+                node.attach
+              )} θ=${radToDeg(node.theta)
+                .toFixed(1)
+                .padStart(6, ' ')}deg ${node.purpose} valid=${
+                this.plannedArmSolution.validatePoint(node.s, i) ? 'y' : 'n'
+              }`
+          )
+          .join('\n') +
+        '\n'
+    );
+
+    this.plannedRenderer.debugPoints.forEach((point, i) => {
+      this.debugTextAtPosition(`${i}`, point);
+    });
+
+    for (var i = 0; i < this.targetProxies.length; i++) {
+      this.debugTextAtPosition(
+        `${debugPrintVector3(this.targetProxies[i].position)}`,
+        this.targetProxies[i]
+      );
+    }
+  }
+
   _makeTargetProxy(pos: VectorR3): THREE.Object3D {
     const transformControls = new TransformControls(
       this.camera,
@@ -320,7 +400,7 @@ export default class Robot {
     return cube;
   }
 
-  _createDebugPoints() {
+  _createStaticGraphics() {
     // ground
     const groundGeometry = new THREE.PlaneGeometry(10, 10, 10, 10);
     const groundMaterial = new THREE.MeshBasicMaterial({
@@ -330,45 +410,9 @@ export default class Robot {
     const plane = new THREE.Mesh(groundGeometry, groundMaterial);
     plane.rotation.x = degToRad(-90);
     this.scene.add(plane);
-
-    this.ikNodes.forEach(node => {
-      const point = makeBox(0.1, Math.random() * 0xffffff);
-      this.debugPoints.push(point);
-      this.scene.add(point);
-    });
-
-    // build line
-    const lineGeom = new THREE.Geometry();
-    this.ikNodes.forEach(node => {
-      const vert = new THREE.Vector3(0, 0, 0);
-      lineGeom.vertices.push(vert);
-    });
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: (0x0000ff: number | string),
-    });
-
-    const line = new THREE.Line(lineGeom, lineMaterial);
-    this.scene.add(line);
-    this.lineGeometry = lineGeom;
   }
 
-  _updateDebugPoints() {
-    for (var i = 0; i < this.debugPoints.length; i++) {
-      const pos = this.ikNodes[i].s;
-      this.debugPoints[i].position.set(pos.x, pos.y, pos.z);
-
-      setColor(
-        this.debugPoints[i],
-        this._validatePoint(this.debugPoints[i].position, i)
-          ? 0x00ff00
-          : 0xff0000
-      );
-      this.lineGeometry.vertices[i].set(pos.x, pos.y, pos.z);
-    }
-    this.lineGeometry.verticesNeedUpdate = true;
-  }
-
-  _solutionIsValid() {
-    return this.ikNodes.every((node, i) => this._validatePoint(node.s, i));
+  _updateGraphics() {
+    this.plannedRenderer.update();
   }
 }
