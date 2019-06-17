@@ -1,6 +1,7 @@
 // @flow
 //
 import type {Purpose} from './lib/Node';
+import type {Vec3Interface} from './Vec3';
 
 import Node, {JOINT, EFFECTOR} from './lib/Node';
 import {
@@ -10,18 +11,20 @@ import {
   VectorR3_UnitZ,
   VectorR3_Zero,
 } from './lib/LinearR3';
-
+import * as Vec3 from './Vec3';
 import Jacobian from './lib/Jacobian';
 import Tree from './lib/Tree';
 
-type Vec3Interface = {
-  x: number,
-  y: number,
-  z: number,
-};
+import Collision from './Collision';
 
 const THREE = require('three');
 const TransformControls = require('three-transform-controls')(THREE);
+
+const RED = 0xff0000;
+const GREEN = 0x00ff00;
+const BLUE = 0x0000ff;
+const ORANGE = 0xff9900;
+const WHITE = 0xfffffff;
 
 /*
 TODO:
@@ -40,20 +43,14 @@ TODO:
 - waypoint-based movement paths
  */
 
+const SHOW_TARGET_POS = false;
+const SHOW_JOINT_POS = false;
+
 function setColor(obj: THREE.Mesh, color: number) {
   const {material} = obj;
   if (material instanceof THREE.MeshBasicMaterial) {
     material.color.setHex(color);
   }
-}
-
-function distanceTo(source: Vec3Interface, dest: Vec3Interface) {
-  const dx = source.x - dest.x;
-  const dy = source.y - dest.y;
-  const dz = source.z - dest.z;
-
-  const distanceToSquared = dx * dx + dy * dy + dz * dz;
-  return Math.sqrt(distanceToSquared);
 }
 
 function makeBox(
@@ -65,6 +62,17 @@ function makeBox(
   const material = new THREE.MeshBasicMaterial({color, wireframe});
   const cube = new THREE.Mesh(geometry, material);
   return cube;
+}
+
+function makeSphere(
+  radius: number,
+  color: number | string,
+  wireframe: boolean = false
+) {
+  const geometry = new THREE.SphereGeometry(radius, 5, 5);
+  const material = new THREE.MeshBasicMaterial({color, wireframe});
+  const sphere = new THREE.Mesh(geometry, material);
+  return sphere;
 }
 
 function toFixed(num, width) {
@@ -142,6 +150,7 @@ class ArmSolution {
   targetVectors: Array<VectorR3> = [];
   // ik destination controlled by targets or end effectors?
   useTargets = true;
+  collision: Collision;
 
   constructor(initialSolution?: Array<number>) {
     const baseRototatorJoint = this._insertIKNode(
@@ -155,9 +164,16 @@ class ArmSolution {
       null // root
     );
 
-    const armBaseTiltJoint = this.addJoint(0, 1, 0, baseRototatorJoint);
-    const armMidJoint = this.addJoint(0, 3, 0, armBaseTiltJoint);
-    const gripperTiltJoint = this.addJoint(0, 4, 0, armMidJoint);
+    const armBaseTiltJoint = this.addJoint(
+      0,
+      1,
+      0,
+      baseRototatorJoint,
+      -90,
+      90
+    );
+    const armMidJoint = this.addJoint(0, 3, 0, armBaseTiltJoint, -130, 130);
+    const gripperTiltJoint = this.addJoint(0, 4, 0, armMidJoint, -130, 130);
     this.addEndEffector(0, 3, 0, gripperTiltJoint);
     this.targetVectors.push(new VectorR3(0, 6, 0));
 
@@ -168,6 +184,13 @@ class ArmSolution {
       this.applySolution(initialSolution);
     }
     this.stepIKState();
+
+    this.collision = new Collision(this.ikNodes.map(node => node.s));
+  }
+
+  update() {
+    this.stepIKState();
+    this.collision.update();
   }
 
   stepIKState() {
@@ -190,13 +213,20 @@ class ArmSolution {
     this.ikJacobian.UpdatedSClampValue(this.targetVectors);
   }
 
-  addJoint(x: number, y: number, z: number, parent: Node) {
+  addJoint(
+    x: number,
+    y: number,
+    z: number,
+    parent: Node,
+    minAngle: number = -180,
+    maxAngle: number = 180
+  ) {
     const ikNode = makeNode(
       new VectorR3(x, y, z), // startPos
       VectorR3_UnitZ(), // rotationAxis
       JOINT, // purpose (joint or effector)
-      degToRad(-180), // minJointAngle in radians
-      degToRad(180) // maxJointAngle in radians
+      degToRad(minAngle), // minJointAngle in radians
+      degToRad(maxAngle) // maxJointAngle in radians
     );
 
     this._insertIKNode(ikNode, parent);
@@ -249,7 +279,11 @@ class ArmSolution {
   }
 
   solutionIsValid() {
-    return this.ikNodes.every((node, i) => this.validatePoint(node.s, i));
+    this.collision.update();
+    return (
+      !this.collision.areAnyColliding() &&
+      this.ikNodes.every((node, i) => this.validatePoint(node.s, i))
+    );
   }
 
   serialize(): Array<number> {
@@ -304,7 +338,7 @@ class ArmSolution {
     const lastSolution = this.lastSolution;
     const lastPosImportance = 0.5;
     return (
-      distanceTo(last(this.ikNodes).s, this.targetVectors[0]) +
+      Vec3.distanceTo(last(this.ikNodes).s, this.targetVectors[0]) +
       (lastSolution
         ? solution.reduce(
             (acc, v, i) => acc + (solution[i] - lastSolution.solution[i]),
@@ -312,7 +346,7 @@ class ArmSolution {
           ) /
             solution.length +
           (positions.reduce(
-            (acc, v, i) => acc + distanceTo(v, lastSolution.positions[i]),
+            (acc, v, i) => acc + Vec3.distanceTo(v, lastSolution.positions[i]),
             0
           ) /
             positions.length) *
@@ -344,7 +378,8 @@ class ArmSolution {
 type ArmRendererState = 'planned' | 'committed';
 class ArmRenderer {
   armSolution: ArmSolution;
-  debugPoints: Array<THREE.Mesh> = [];
+  jointMeshes: Array<THREE.Mesh> = [];
+  collisionMeshes: Array<THREE.Mesh> = [];
   lineGeometry: THREE.Geometry;
   scene: THREE.Scene;
   state: ArmRendererState;
@@ -358,8 +393,8 @@ class ArmRenderer {
     this.armSolution = armSolution;
 
     this.armSolution.ikNodes.forEach(node => {
-      const point = makeBox(0.1, Math.random() * 0xffffff);
-      this.debugPoints.push(point);
+      const point = makeBox(0.1, WHITE, state === 'committed');
+      this.jointMeshes.push(point);
       this.scene.add(point);
     });
 
@@ -370,28 +405,46 @@ class ArmRenderer {
       lineGeom.vertices.push(vert);
     });
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: ((state === 'planned' ? 0x0000ff : 0xff9900): number | string),
+      color: ((state === 'planned' ? BLUE : ORANGE): number | string),
     });
 
     const line = new THREE.Line(lineGeom, lineMaterial);
     this.scene.add(line);
     this.lineGeometry = lineGeom;
+
+    if (this.state === 'planned') {
+      // build collision viz
+      this.armSolution.collision.volumes.forEach(vol => {
+        const sphere = makeSphere(vol.radius, GREEN);
+        this.collisionMeshes.push(sphere);
+        this.scene.add(sphere);
+      });
+    }
   }
 
   update() {
-    for (var i = 0; i < this.debugPoints.length; i++) {
+    this.jointMeshes.forEach((jointMesh, i) => {
       const pos = this.armSolution.ikNodes[i].s;
-      this.debugPoints[i].position.set(pos.x, pos.y, pos.z);
+      jointMesh.position.set(pos.x, pos.y, pos.z);
 
-      setColor(
-        this.debugPoints[i],
-        this.armSolution.validatePoint(this.debugPoints[i].position, i)
-          ? 0x00ff00
-          : 0xff0000
-      );
+      if (this.state === 'planned') {
+        setColor(
+          jointMesh,
+          this.armSolution.validatePoint(jointMesh.position, i) ? GREEN : RED
+        );
+      }
       this.lineGeometry.vertices[i].set(pos.x, pos.y, pos.z);
-    }
+    });
     this.lineGeometry.verticesNeedUpdate = true;
+
+    if (this.state === 'planned') {
+      this.collisionMeshes.forEach((collisionMesh, i) => {
+        const volume = this.armSolution.collision.volumes[i];
+        const volCenter = volume.center;
+        collisionMesh.position.set(volCenter.x, volCenter.y, volCenter.z);
+        setColor(collisionMesh, volume.isColliding ? RED : GREEN);
+      });
+    }
   }
 }
 
@@ -427,6 +480,7 @@ export default class Robot {
     this.plannedArmSolution.targetVectors[0].y += Math.random() * 0.01;
     this.plannedArmSolution.targetVectors[0].z += Math.random() * 0.01;
     this.plannedArmSolution.stepIKState();
+
     this.committedArmSolution = new ArmSolution(
       this.plannedArmSolution.serialize()
     );
@@ -457,8 +511,8 @@ export default class Robot {
   update() {
     for (var i = 0; i < this.targetProxies.length; i++) {
       // can't go below ground
-      if (this.targetProxies[i].position.y < 0) {
-        this.targetProxies[i].position.y = 0;
+      if (this.targetProxies[i].position.y <= 0) {
+        this.targetProxies[i].position.y = 0.001;
       }
       // copy current position from target proxy object
       this.plannedArmSolution.targetVectors[i].Set(
@@ -468,7 +522,7 @@ export default class Robot {
       );
     }
     // update ik solution
-    this.plannedArmSolution.stepIKState();
+    this.plannedArmSolution.update();
     // move threejs geometries as a result of ik update
     this._updateGraphics();
 
@@ -508,12 +562,17 @@ export default class Robot {
           ':\n' +
           armSolution.ikNodes
             .map((node, i) => {
-              const attach = false ? `a=${debugPrintVector3(node.attach)}` : '';
-              return `${node.purpose.padEnd(8)} ${i} s=${debugPrintVector3(
-                node.s
-              )}${attach} θ=${radToDeg(node.theta)
+              const formattedPos = SHOW_JOINT_POS
+                ? `s=${debugPrintVector3(node.s)}`
+                : '';
+
+              const formattedPurpose = node.purpose.padEnd(8);
+              const formattedAngle = radToDeg(node.theta)
                 .toFixed(1)
-                .padStart(6, ' ')}deg ok=${
+                .padStart(6, ' ');
+
+              const attach = false ? `a=${debugPrintVector3(node.attach)}` : '';
+              return `${formattedPurpose} ${i} ${formattedPos}${attach} θ=${formattedAngle}deg ok=${
                 armSolution.validatePoint(node.s, i) ? 'y' : 'n'
               }`;
             })
@@ -522,15 +581,23 @@ export default class Robot {
       );
     });
 
-    this.plannedRenderer.debugPoints.forEach((point, i) => {
+    this.plannedRenderer.jointMeshes.forEach((point, i) => {
       this.debugTextAtPosition(`${i}`, point);
     });
 
-    for (var i = 0; i < this.targetProxies.length; i++) {
-      this.debugTextAtPosition(
-        `${debugPrintVector3(this.targetProxies[i].position)}`,
-        this.targetProxies[i]
-      );
+    // this.plannedRenderer.collisionMeshes.forEach((point, i) => {
+    //   this.debugTextAtPosition(
+    //     `${this.plannedArmSolution.collision.volumes[i].radius.toFixed(2)}`,
+    //     point
+    //   );
+    // });
+    if (SHOW_TARGET_POS) {
+      for (var i = 0; i < this.targetProxies.length; i++) {
+        this.debugTextAtPosition(
+          `${debugPrintVector3(this.targetProxies[i].position)}`,
+          this.targetProxies[i]
+        );
+      }
     }
   }
 
@@ -541,7 +608,7 @@ export default class Robot {
     );
     this.scene.add(transformControls);
 
-    const cube = makeBox(0.5, 0x00ff00, true);
+    const cube = makeBox(0.5, GREEN, true);
     cube.position.set(pos.x, pos.y, pos.z);
     this.scene.add(cube);
     transformControls.attach(cube);
