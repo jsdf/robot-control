@@ -30,6 +30,13 @@ function Controls(props: {robot: IKRobot}) {
       >
         commit
       </button>
+      <button
+        onClick={e => {
+          props.robot.resetToInitial();
+        }}
+      >
+        reset
+      </button>
     </div>
   );
 }

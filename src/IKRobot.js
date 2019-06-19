@@ -460,6 +460,7 @@ export default class Robot {
   plannedRenderer: ArmRenderer;
   committedArmSolution: ArmSolution;
   committedRenderer: ArmRenderer;
+  initialConfiguration: Array<number>;
 
   constructor(
     scene: THREE.Scene,
@@ -481,9 +482,8 @@ export default class Robot {
     this.plannedArmSolution.targetVectors[0].z += Math.random() * 0.01;
     this.plannedArmSolution.stepIKState();
 
-    this.committedArmSolution = new ArmSolution(
-      this.plannedArmSolution.serialize()
-    );
+    this.initialConfiguration = this.plannedArmSolution.serialize();
+    this.committedArmSolution = new ArmSolution(this.initialConfiguration);
 
     this.plannedRenderer = new ArmRenderer(
       this.plannedArmSolution,
@@ -533,6 +533,10 @@ export default class Robot {
     const plan = this.plannedArmSolution.serialize();
     this.committedArmSolution.applySolution(plan);
     return plan;
+  }
+
+  resetToInitial(): void {
+    this.plannedArmSolution.applySolution(this.initialConfiguration);
   }
 
   _debugLogging() {
