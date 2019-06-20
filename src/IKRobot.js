@@ -461,6 +461,7 @@ export default class Robot {
   committedArmSolution: ArmSolution;
   committedRenderer: ArmRenderer;
   initialConfiguration: Array<number>;
+  initialTarget: Vec3Interface;
 
   constructor(
     scene: THREE.Scene,
@@ -483,6 +484,7 @@ export default class Robot {
     this.plannedArmSolution.stepIKState();
 
     this.initialConfiguration = this.plannedArmSolution.serialize();
+    this.initialTarget = Vec3.clone(this.plannedArmSolution.targetVectors[0]);
     this.committedArmSolution = new ArmSolution(this.initialConfiguration);
 
     this.plannedRenderer = new ArmRenderer(
@@ -535,8 +537,78 @@ export default class Robot {
     return plan;
   }
 
-  resetToInitial(): void {
+  getPlan(): {plan: Array<number>, target: Vec3Interface} {
+    return {
+      plan: this.plannedArmSolution.serialize(),
+      target: Vec3.clone(this.plannedArmSolution.targetVectors[0]),
+    };
+  }
+
+  loadPlan(args: {plan: Array<number>, target: Vec3Interface}): void {
+    this.plannedArmSolution.applySolution(args.plan);
+    Vec3.copyFrom(this.targetProxies[0].position, args.target);
+  }
+
+  resetToInitial(alsoResetTarget: boolean = false): void {
     this.plannedArmSolution.applySolution(this.initialConfiguration);
+    if (alsoResetTarget) {
+      Vec3.copyFrom(this.targetProxies[0].position, this.initialTarget);
+    }
+  }
+
+  _animationTimer = null;
+  playAnimation(
+    animation: Array<{
+      interval: number,
+      plan: {plan: Array<number>, target: Vec3Interface},
+    }>
+  ) {
+    let currentFrame = 0;
+    let startTime = Date.now();
+    let elapsedFrameIntervalSum = 0;
+
+    const enqueueFrame = () => {
+      const animTimer = requestAnimationFrame(() => {
+        if (this._animationTimer != animTimer) {
+          return; // kill this anim
+        }
+        this._animationTimer = null;
+        let sinceStart = (Date.now() - startTime) / 1000;
+
+        while (
+          animation[currentFrame] &&
+          elapsedFrameIntervalSum + animation[currentFrame].interval <
+            sinceStart
+        ) {
+          elapsedFrameIntervalSum += animation[currentFrame].interval;
+          currentFrame++;
+          this.loadPlan(animation[currentFrame].plan);
+        }
+
+        if (animation[currentFrame + 1]) {
+          const frameCompletion =
+            sinceStart -
+            elapsedFrameIntervalSum / animation[currentFrame].interval;
+          const interpolated = Vec3.lerp(
+            animation[currentFrame].plan.target,
+            animation[currentFrame + 1].plan.target,
+            frameCompletion
+          );
+
+          Vec3.copyFrom(this.targetProxies[0].position, interpolated);
+        }
+
+        if (animation[currentFrame + 1]) {
+          enqueueFrame();
+        }
+      });
+      this._animationTimer = animTimer;
+    };
+    if (animation[currentFrame] == null) {
+      return;
+    }
+    enqueueFrame();
+    this.loadPlan(animation[currentFrame].plan);
   }
 
   _debugLogging() {
@@ -576,9 +648,9 @@ export default class Robot {
                 .padStart(6, ' ');
 
               const attach = false ? `a=${debugPrintVector3(node.attach)}` : '';
-              return `${formattedPurpose} ${i} ${formattedPos}${attach} θ=${formattedAngle}deg ok=${
-                armSolution.validatePoint(node.s, i) ? 'y' : 'n'
-              }`;
+              return `${formattedPurpose} ${i} ${formattedPos}${attach} θ=${formattedAngle}deg ${node.theta.toFixed(
+                1
+              )} ok=${armSolution.validatePoint(node.s, i) ? 'y' : 'n'}`;
             })
             .join('\n') +
           '\n'

@@ -47,9 +47,9 @@ document.body && document.body.appendChild(debugAtPosEl);
 const orbitControls = new OrbitControls(camera);
 orbitControls.update();
 
-const Robot = window.location.search.slice(1).includes('ik')
-  ? IKRobot
-  : AnnealingRobot;
+const Robot = window.location.search.slice(1).includes('annealing')
+  ? AnnealingRobot
+  : IKRobot;
 
 function toScreenPosition(obj, camera, renderer) {
   var vector = new THREE.Vector3();
