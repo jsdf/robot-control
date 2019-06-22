@@ -629,6 +629,10 @@ export default class Robot {
     return plan;
   }
 
+  getCommitted(): Array<number> {
+    return this.committedArmSolution.serialize();
+  }
+
   getPlan(): {plan: Array<number>, target: Vec3Interface} {
     return {
       plan: this.plannedArmSolution.serialize(),

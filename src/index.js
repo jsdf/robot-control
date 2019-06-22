@@ -44,7 +44,7 @@ Object.assign(debugAtPosEl.style, {
 });
 document.body && document.body.appendChild(debugAtPosEl);
 
-const orbitControls = new OrbitControls(camera);
+const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.update();
 
 const Robot = window.location.search.slice(1).includes('annealing')
