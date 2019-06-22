@@ -448,6 +448,98 @@ class ArmRenderer {
   }
 }
 
+type AnimationKeyframe = {
+  interval: number,
+  plan: {plan: Array<number>, target: Vec3Interface},
+};
+class Animation {
+  _framesTimer: ?AnimationFrameID = null;
+  currentFrame = 0;
+  startTime = Date.now();
+  elapsedFrameIntervalSum = 0;
+  frames: Array<AnimationKeyframe>;
+  robot: Robot;
+  constructor(
+    robot: Robot,
+    unloopedAnimation: Array<AnimationKeyframe>,
+    loop: boolean = false
+  ) {
+    this.robot = robot;
+    this.frames = unloopedAnimation;
+    if (loop) {
+      this.frames = unloopedAnimation.concat(last(unloopedAnimation));
+    }
+
+    this.currentFrame = 0;
+    this.startTime = Date.now();
+    this.elapsedFrameIntervalSum = 0;
+
+    const enqueueFrame = () => {
+      const animTimer = requestAnimationFrame(() => {
+        if (this._framesTimer != animTimer) {
+          return; // kill this anim
+        }
+        this._framesTimer = null;
+        let sinceStart = (Date.now() - this.startTime) / 1000;
+
+        while (
+          this.frames[this.currentFrame] &&
+          this.elapsedFrameIntervalSum +
+            this.frames[this.currentFrame].interval <
+            sinceStart
+        ) {
+          this.elapsedFrameIntervalSum += this.frames[
+            this.currentFrame
+          ].interval;
+          this.currentFrame++;
+          const nextFrame = this.frames[this.currentFrame];
+          if (nextFrame) {
+            this.robot.loadPlan(nextFrame.plan);
+          }
+        }
+
+        if (this.frames[this.currentFrame + 1]) {
+          const frameCompletion =
+            sinceStart -
+            this.elapsedFrameIntervalSum /
+              this.frames[this.currentFrame].interval;
+          const interpolated = Vec3.lerp(
+            this.frames[this.currentFrame].plan.target,
+            this.frames[this.currentFrame + 1].plan.target,
+            frameCompletion
+          );
+
+          Vec3.copyFrom(this.robot.targetProxies[0].position, interpolated);
+        }
+
+        if (loop && !this.frames[this.currentFrame + 1]) {
+          this.currentFrame = 0;
+          this.startTime = Date.now();
+          this.elapsedFrameIntervalSum = 0;
+        }
+
+        if (this.frames[this.currentFrame + 1]) {
+          enqueueFrame();
+        }
+      });
+      this._framesTimer = animTimer;
+    };
+    if (this.frames[this.currentFrame] == null) {
+      return;
+    }
+    enqueueFrame();
+    this.robot.loadPlan(this.frames[this.currentFrame].plan);
+  }
+
+  destroy() {
+    const activeTimer = this._framesTimer;
+
+    if (activeTimer != null) {
+      cancelAnimationFrame(activeTimer);
+    }
+  }
+}
+
 export default class Robot {
   scene: THREE.Scene;
   camera: THREE.Camera;
@@ -556,59 +648,15 @@ export default class Robot {
     }
   }
 
-  _animationTimer = null;
+  animation: ?Animation = null;
   playAnimation(
-    animation: Array<{
-      interval: number,
-      plan: {plan: Array<number>, target: Vec3Interface},
-    }>
+    unloopedAnimation: Array<AnimationKeyframe>,
+    loop: boolean = false
   ) {
-    let currentFrame = 0;
-    let startTime = Date.now();
-    let elapsedFrameIntervalSum = 0;
-
-    const enqueueFrame = () => {
-      const animTimer = requestAnimationFrame(() => {
-        if (this._animationTimer != animTimer) {
-          return; // kill this anim
-        }
-        this._animationTimer = null;
-        let sinceStart = (Date.now() - startTime) / 1000;
-
-        while (
-          animation[currentFrame] &&
-          elapsedFrameIntervalSum + animation[currentFrame].interval <
-            sinceStart
-        ) {
-          elapsedFrameIntervalSum += animation[currentFrame].interval;
-          currentFrame++;
-          this.loadPlan(animation[currentFrame].plan);
-        }
-
-        if (animation[currentFrame + 1]) {
-          const frameCompletion =
-            sinceStart -
-            elapsedFrameIntervalSum / animation[currentFrame].interval;
-          const interpolated = Vec3.lerp(
-            animation[currentFrame].plan.target,
-            animation[currentFrame + 1].plan.target,
-            frameCompletion
-          );
-
-          Vec3.copyFrom(this.targetProxies[0].position, interpolated);
-        }
-
-        if (animation[currentFrame + 1]) {
-          enqueueFrame();
-        }
-      });
-      this._animationTimer = animTimer;
-    };
-    if (animation[currentFrame] == null) {
-      return;
+    if (this.animation) {
+      this.animation.destroy();
     }
-    enqueueFrame();
-    this.loadPlan(animation[currentFrame].plan);
+    this.animation = new Animation(this, unloopedAnimation, loop);
   }
 
   _debugLogging() {

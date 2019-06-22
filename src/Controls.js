@@ -23,9 +23,25 @@ async function sentToServer(plan: Array<number>) {
   }
 }
 
+function FrameCount(props: {robot: IKRobot}) {
+  const [currentFrame, setCurrentFrame] = React.useState(0);
+
+  React.useEffect(() => {
+    let interval = setInterval(() => {
+      const {animation} = props.robot;
+      setCurrentFrame(animation ? animation.currentFrame : 0);
+    });
+
+    return () => clearInterval(interval);
+  });
+
+  return <span>keyframe: {currentFrame}</span>;
+}
+
 function Controls(props: {robot: IKRobot}) {
   const [serverResponse, setServerResponse] = React.useState(null);
   const [keyframes, setKeyframes] = React.useState([]);
+  const [loop, setLoop] = React.useState(true);
 
   return (
     <div>
@@ -50,7 +66,7 @@ function Controls(props: {robot: IKRobot}) {
             props.robot.resetToInitial();
           }}
         >
-          smooth
+          re-solve IK
         </button>
         <button
           onClick={e => {
@@ -87,11 +103,22 @@ function Controls(props: {robot: IKRobot}) {
         </button>
         <button
           onClick={() => {
-            props.robot.playAnimation(keyframes);
+            props.robot.playAnimation(keyframes, loop);
           }}
         >
           play
         </button>
+        <label>
+          loop:
+          <input
+            type="checkbox"
+            checked={loop}
+            onChange={event => {
+              setLoop(loop => !loop);
+            }}
+          />
+        </label>
+        <FrameCount robot={props.robot} />
         <div style={{height: 30}}>
           {keyframes.map((frame, i) => (
             <span key={i}>
