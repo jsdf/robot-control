@@ -142,6 +142,10 @@ function AnimControls(props: {robot: IKRobot}) {
   );
 }
 
+function within(a, b, distance) {
+  return Math.abs(a - b) < 0.001;
+}
+
 function CommitControls(props: {robot: IKRobot}) {
   const [serverResponse, setServerResponse] = React.useState(null);
   const [clawAngle, setClawAngle] = React.useState(0);
@@ -167,6 +171,8 @@ function CommitControls(props: {robot: IKRobot}) {
     checkAndUpdateNetwork();
   }, []);
 
+  const commitedRef = React.useRef(null);
+
   async function commitToServer(plan, clawAngle, clawGrip) {
     const fullArmConfiguration: Array<number> = [
       plan[ARM_JOINTS.rotate_base],
@@ -176,6 +182,16 @@ function CommitControls(props: {robot: IKRobot}) {
       clawAngle,
       clawGrip,
     ];
+
+    const prev = commitedRef.current;
+    if (
+      prev &&
+      fullArmConfiguration.every((val, i) => within(prev[i], val, 0.0001))
+    ) {
+      return;
+    }
+
+    commitedRef.current = fullArmConfiguration;
 
     const configWithNames = {};
     Object.keys(ARM_JOINTS).forEach((key, i) => {
@@ -201,6 +217,27 @@ function CommitControls(props: {robot: IKRobot}) {
     }
   }
 
+  function commitIfValid() {
+    if (props.robot.plannedArmSolution.solutionIsValid()) {
+      const plan = props.robot.commitPlan();
+      commitToServer(plan, degToRad(clawAngle), degToRad(clawGrip));
+    }
+  }
+
+  const [autoCommit, setAutoCommit] = React.useState(false);
+  const autoCommitRef = React.useRef(() => {});
+  autoCommitRef.current = autoCommit ? commitIfValid : () => {};
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      if (autoCommitRef.current) {
+        autoCommitRef.current();
+      }
+    }, 10);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div style={{textAlign: 'right'}}>
       <div>
@@ -214,6 +251,18 @@ function CommitControls(props: {robot: IKRobot}) {
             }}
           />
         </label>
+        <label>
+          auto-commit:
+          <input
+            type="checkbox"
+            checked={autoCommit}
+            onChange={event => {
+              setAutoCommit(!autoCommit);
+            }}
+          />
+        </label>
+      </div>
+      <div>
         {network.online ? 'online' : 'offline'}
         <input
           type="text"
@@ -229,10 +278,7 @@ function CommitControls(props: {robot: IKRobot}) {
       <div>
         <button
           onClick={e => {
-            if (props.robot.plannedArmSolution.solutionIsValid()) {
-              const plan = props.robot.commitPlan();
-              commitToServer(plan, degToRad(clawAngle), degToRad(clawGrip));
-            }
+            commitIfValid();
           }}
         >
           commit

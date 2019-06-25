@@ -3,7 +3,7 @@ import type {Vec3Interface} from './Vec3';
 import * as Vec3 from './Vec3';
 
 const SPHERE_RADIUS = 0.1;
-const SPHERE_INTERVAL = SPHERE_RADIUS / 4;
+const SPHERE_INTERVAL = SPHERE_RADIUS / 2;
 const GAP = 0.001;
 
 type CollisionVolume = {

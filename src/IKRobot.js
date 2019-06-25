@@ -153,7 +153,7 @@ class ArmSolution {
   collision: Collision;
 
   constructor(initialSolution?: Array<number>) {
-    const baseRototatorJoint = this._insertIKNode(
+    const baseRotatorJoint = this._insertIKNode(
       makeNode(
         VectorR3_Zero(), // startPos
         VectorR3_UnitY(), // rotationAxis
@@ -164,14 +164,7 @@ class ArmSolution {
       null // root
     );
 
-    const armBaseTiltJoint = this.addJoint(
-      0,
-      1,
-      0,
-      baseRototatorJoint,
-      -90,
-      90
-    );
+    const armBaseTiltJoint = this.addJoint(0, 1, 0, baseRotatorJoint, -90, 90);
     const armMidJoint = this.addJoint(0, 3, 0, armBaseTiltJoint, -130, 130);
     const gripperTiltJoint = this.addJoint(0, 4, 0, armMidJoint, -130, 130);
     this.addEndEffector(0, 3, 0, gripperTiltJoint);
@@ -545,6 +538,7 @@ export default class Robot {
   camera: THREE.Camera;
   renderer: THREE.Renderer;
   targetProxies: Array<THREE.Object3D> = [];
+  rotationControls: Array<THREE.Object3D> = [];
   debugLog: string => void;
   debugTextAtPosition: (string, THREE.Object3D) => void;
 
@@ -600,6 +594,11 @@ export default class Robot {
         this.plannedArmSolution.targetVectors[i]
       );
     }
+
+    // base rotator joint
+    this.rotationControls[0] = this._makeRotationControls(
+      this.plannedArmSolution.ikNodes[0].s
+    );
   }
 
   update() {
@@ -614,6 +613,26 @@ export default class Robot {
         this.targetProxies[i].position.y,
         this.targetProxies[i].position.z
       );
+      this.targetProxies[i].userData.transformControls.update();
+    }
+    for (var i = 0; i < this.rotationControls.length; i++) {
+      const rotator = this.rotationControls[i];
+      if (rotator) {
+        const node = this.plannedArmSolution.ikNodes[i];
+        // clamp rotation
+        rotator.rotation.y = Math.max(
+          Math.min(rotator.rotation.y, node.GetMaxTheta()),
+          node.GetMinTheta()
+        );
+        rotator.rotation.z = 0;
+        rotator.rotation.x = 0;
+        // rotator.userData.transformControls.update();
+        // rotator.userData.transformControls.scale.set(1, 1, 1);
+
+        // node.SetTheta(rotator.rotation.y);
+
+        rotator.rotation.y = node.GetTheta();
+      }
     }
     // update ik solution
     this.plannedArmSolution.update();
@@ -729,6 +748,28 @@ export default class Robot {
     }
   }
 
+  _makeRotationControls(pos: VectorR3): THREE.Object3D {
+    // const transformControls = new TransformControlsNew(
+    //   this.camera,
+    //   this.renderer.domElement
+    // );
+    // this.scene.add(transformControls);
+
+    // transformControls.setMode('rotate');
+    // transformControls.axis = 'Y';
+
+    const cube = makeBox(0.5, GREEN, true);
+    cube.position.set(pos.x, pos.y, pos.z);
+    this.scene.add(cube);
+    // transformControls.attach(cube);
+    // cube.userData = {
+    //   transformControls,
+    // };
+    // transformControls.showX = false;
+    // transformControls.showZ = false;
+    return cube;
+  }
+
   _makeTargetProxy(pos: VectorR3): THREE.Object3D {
     const transformControls = new TransformControls(
       this.camera,
@@ -740,6 +781,9 @@ export default class Robot {
     cube.position.set(pos.x, pos.y, pos.z);
     this.scene.add(cube);
     transformControls.attach(cube);
+    cube.userData = {
+      transformControls,
+    };
     return cube;
   }
 
