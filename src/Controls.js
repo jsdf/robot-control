@@ -4,9 +4,32 @@ import type IKRobot from './IKRobot';
 import React from 'react';
 import ReactDOM from 'react-dom';
 
-async function sentToServer(plan: Array<number>) {
+const ARM_JOINTS = {
+  rotate_base: 0,
+  arm_bottom_joint: 1,
+  arm_middle_joint: 2,
+  tilt_claw: 3,
+  rotate_claw: 4,
+  close_claw: 5,
+};
+
+const defaultHost = '192.168.7.45';
+
+async function checkOnline(host) {
+  try {
+    await fetch(`http://${host}:8080/health`);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function degToRad(angleDegrees: number): number {
+  return angleDegrees * (Math.PI / 180.0);
+}
+
+async function sendToServer(host: string, plan: Array<number>) {
   console.log('committing', plan);
-  const host = '192.168.7.45';
 
   try {
     const response = await fetch(
@@ -19,7 +42,6 @@ async function sentToServer(plan: Array<number>) {
     return await response.json();
   } catch (err) {
     console.error(err);
-    debugger;
   }
 }
 
@@ -119,13 +141,59 @@ function AnimControls(props: {robot: IKRobot}) {
     </div>
   );
 }
+
 function CommitControls(props: {robot: IKRobot}) {
   const [serverResponse, setServerResponse] = React.useState(null);
   const [clawAngle, setClawAngle] = React.useState(0);
   const [clawGrip, setClawGrip] = React.useState(0);
+  const [network, setNetwork] = React.useState({
+    host: defaultHost,
+    online: false,
+    enabled: true,
+  });
+
+  function checkAndUpdateNetwork(updatedHost = network.host) {
+    checkOnline(updatedHost).then(online => {
+      setNetwork(prev =>
+        prev.host === updatedHost && prev.online != online
+          ? {...prev, online}
+          : prev
+      );
+    });
+  }
+
+  React.useEffect(() => {
+    console.log('checkAndUpdateNetwork from useEffect');
+    checkAndUpdateNetwork();
+  }, []);
 
   async function commitToServer(plan, clawAngle, clawGrip) {
-    const res = await sentToServer(plan.concat(clawAngle, clawGrip));
+    const fullArmConfiguration: Array<number> = [
+      plan[ARM_JOINTS.rotate_base],
+      plan[ARM_JOINTS.arm_bottom_joint],
+      plan[ARM_JOINTS.arm_middle_joint],
+      plan[ARM_JOINTS.tilt_claw],
+      clawAngle,
+      clawGrip,
+    ];
+
+    const configWithNames = {};
+    Object.keys(ARM_JOINTS).forEach((key, i) => {
+      configWithNames[key] = fullArmConfiguration[i];
+    });
+
+    console.log('committing', configWithNames);
+
+    if (!network.online) {
+      console.log('offline, skipping request to server');
+      return;
+    }
+    if (!network.enabled) {
+      console.log('network disabled, skipping request to server');
+      return;
+    }
+
+    const res = await sendToServer(network.host, fullArmConfiguration);
 
     console.log(res);
     if (res) {
@@ -136,11 +204,34 @@ function CommitControls(props: {robot: IKRobot}) {
   return (
     <div style={{textAlign: 'right'}}>
       <div>
+        <label>
+          enabled:
+          <input
+            type="checkbox"
+            checked={network.enabled}
+            onChange={event => {
+              setNetwork(prev => ({...prev, enabled: !network.enabled}));
+            }}
+          />
+        </label>
+        {network.online ? 'online' : 'offline'}
+        <input
+          type="text"
+          value={network.host}
+          onChange={e => {
+            const updated = e.target.value;
+            setNetwork(prev => ({...prev, host: updated}));
+            console.log('checkAndUpdateNetwork from onChange');
+            checkAndUpdateNetwork(updated);
+          }}
+        />
+      </div>
+      <div>
         <button
           onClick={e => {
             if (props.robot.plannedArmSolution.solutionIsValid()) {
               const plan = props.robot.commitPlan();
-              commitToServer(plan, clawAngle, clawGrip);
+              commitToServer(plan, degToRad(clawAngle), degToRad(clawGrip));
             }
           }}
         >
@@ -161,7 +252,6 @@ function CommitControls(props: {robot: IKRobot}) {
           reset
         </button>
       </div>
-
       <div>
         <label>
           claw angle <input size={3} readOnly value={Math.floor(clawAngle)} />
@@ -174,7 +264,11 @@ function CommitControls(props: {robot: IKRobot}) {
             onChange={e => {
               const updated = parseInt(e.target.value);
               setClawAngle(updated);
-              commitToServer(props.robot.getCommitted(), updated, clawGrip);
+              commitToServer(
+                props.robot.getCommitted(),
+                degToRad(updated),
+                degToRad(clawGrip)
+              );
             }}
           />
         </label>
@@ -191,12 +285,19 @@ function CommitControls(props: {robot: IKRobot}) {
             onChange={e => {
               const updated = parseInt(e.target.value);
               setClawGrip(updated);
-              commitToServer(props.robot.getCommitted(), clawAngle, updated);
+              commitToServer(
+                props.robot.getCommitted(),
+                degToRad(clawAngle),
+                degToRad(updated)
+              );
             }}
           />
         </label>
       </div>
-      <pre>{JSON.stringify(serverResponse, null, 2)}</pre>
+      <pre style={{textAlign: 'initial'}}>
+        servos:
+        {'\n' + JSON.stringify(serverResponse || 'no data', null, 2)}
+      </pre>
     </div>
   );
 }

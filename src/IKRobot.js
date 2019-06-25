@@ -158,8 +158,8 @@ class ArmSolution {
         VectorR3_Zero(), // startPos
         VectorR3_UnitY(), // rotationAxis
         JOINT, // purpose (joint or effector)
-        4 * -Math.PI, // minJointAngle in radians
-        4 * Math.PI // maxJointAngle in radians
+        degToRad(-90), // minJointAngle in radians
+        degToRad(90) // maxJointAngle in radians
       ),
       null // root
     );
