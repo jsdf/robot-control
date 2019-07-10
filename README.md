@@ -2,8 +2,10 @@
 
 WebGL-based UI to calculate arm solutions and control [this robot arm](https://github.com/jsdf/robot-arm)
 
-Inverse Kinematics Demo: https://jsdf.github.io/robot-control?ik
+[Video of it in action](https://twitter.com/ur_friend_james/status/1146216272868196352)
+
+Demo using Inverse Kinematics to calculate arm solution: https://jsdf.github.io/robot-control?ik
 Source: [IKRobot.js](src/IKRobot.js)
 
-Simulated Annealing Demo (old): https://jsdf.github.io/robot-control?annealing
+Demo using Simulated Annealing to calculate arm solution (old): https://jsdf.github.io/robot-control?annealing
 Source: [AnnealingRobot.js](src/AnnealingRobot.js)
