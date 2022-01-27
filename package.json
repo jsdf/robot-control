@@ -41,7 +41,7 @@
     "resolve": "1.6.0",
     "style-loader": "0.19.0",
     "sw-precache-webpack-plugin": "0.11.4",
-    "three": "^0.92.0",
+    "three": "^0.137.0",
     "three-orbit-controls": "^82.1.0",
     "three-transform-controls": "^1.0.4",
     "url-loader": "0.6.2",
